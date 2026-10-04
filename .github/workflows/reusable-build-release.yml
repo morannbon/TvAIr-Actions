@@ -16,6 +16,10 @@ on:
         required: false
         type: string
         default: '["x64","x86"]'
+      package_platforms_json:
+        required: false
+        type: string
+        default: '["x64","x86"]'
 
 permissions:
   contents: write
@@ -42,12 +46,14 @@ jobs:
 
       - name: Prepare package
         shell: pwsh
+        if: contains(fromJson(inputs.package_platforms_json), matrix.platform)
         run: |
           & "${{ inputs.package_script }}" `
             -Platform "${{ matrix.platform }}" `
             -RefName "${{ github.ref_name }}"
 
       - name: Upload package
+        if: contains(fromJson(inputs.package_platforms_json), matrix.platform)
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.product_name }}-${{ matrix.platform }}-package
