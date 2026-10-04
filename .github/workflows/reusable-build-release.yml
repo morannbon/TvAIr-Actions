@@ -1,0 +1,78 @@
+name: Reusable Build and Draft Release
+
+on:
+  workflow_call:
+    inputs:
+      product_name:
+        required: true
+        type: string
+      solution:
+        required: true
+        type: string
+      package_script:
+        required: true
+        type: string
+      platforms_json:
+        required: false
+        type: string
+        default: '["x64","x86"]'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-2022
+
+    strategy:
+      matrix:
+        platform: ${{ fromJson(inputs.platforms_json) }}
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build
+        shell: pwsh
+        run: |
+          msbuild "${{ inputs.solution }}" /restore /m /p:Configuration=Release /p:Platform=${{ matrix.platform }}
+
+      - name: Prepare package
+        shell: pwsh
+        run: |
+          & "${{ inputs.package_script }}" `
+            -Platform "${{ matrix.platform }}" `
+            -RefName "${{ github.ref_name }}"
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.product_name }}-${{ matrix.platform }}-package
+          path: package/*.zip
+          if-no-files-found: error
+
+  draft-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: windows-2022
+
+    steps:
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ${{ inputs.product_name }}-*-package
+          path: release
+          merge-multiple: true
+
+      - name: Create draft release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" `
+            --draft `
+            --title "${{ inputs.product_name }} ${{ github.ref_name }}" `
+            release/*.zip
